@@ -1,4 +1,4 @@
-# RayTrac$^{++}$er
+# RayTrac$`^{++}`$er
 
 A (somewhat) simple raytracer built in C++
 
