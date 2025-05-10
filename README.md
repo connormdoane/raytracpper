@@ -6,7 +6,7 @@ A few years ago I built a raytracer in Rust as an exercise in both the language 
 
 ## Current State
 
-![An example output image](https://github.com/connormdoane/raytracpper/blob/master/screenshot.png)
+![An example output image](https://github.com/connormdoane/raytracpper/blob/master/finalrender1.png)
 
 ## Attributions
 
