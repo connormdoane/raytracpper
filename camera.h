@@ -4,6 +4,11 @@
 #include "hittable.h"
 #include "material.h"
 
+#include <vector>
+#include <thread>
+#include <mutex>
+#include <atomic>
+
 class camera {
  public:
   double aspect_ratio = 16.0 / 9.0;
@@ -22,19 +27,33 @@ class camera {
   void render(const hittable& world) {
     initialize();
 
+    std::vector<color> framebuffer(image_width * image_height);
+
     std::cout << "P3\n" << image_width << ' ' << image_height << "\n255\n";
 
-    for (int j = 0; j < image_height; j++) {
-      std::clog << "\rScanlines Remaining: " << (image_height - j) << ' ' << std::flush;
-      for (int i = 0; i < image_width; i++) {
-        color pixel_color = color(0, 0, 0);
+    int thread_count = std::thread::hardware_concurrency();
+    int rows_per_thread = image_height / thread_count;
+    sections_remaining = thread_count;
 
-        for (int sample = 0; sample < samples_per_pixel; sample++) {
-          ray r = get_ray(i,j);
-          pixel_color += ray_color(r, max_depth, world);
-        }
+    std::vector<std::thread> threads;
 
-        write_color(std::cout, pixel_samples_scale * pixel_color);
+    for (int t = 0; t < thread_count; t++) {
+      int start_row = t * rows_per_thread;
+      int end_row = (t==thread_count-1) ? image_height : start_row + rows_per_thread;
+
+      threads.emplace_back([this, &world, &framebuffer, start_row, end_row]() {
+        this->render_section(world, framebuffer, start_row, end_row);
+      });
+    }
+
+    for (auto& thread : threads) {
+      thread.join();
+    }
+
+    for (int j = 0; j < image_height; ++j) {
+      for (int i = 0; i < image_width; ++i) {
+        int index = j * image_width + i;
+        write_color(std::cout, pixel_samples_scale * framebuffer[index]);
       }
     }
 
@@ -51,6 +70,8 @@ class camera {
   vec3 u, v, w;
   vec3 defocus_disk_u;
   vec3 defocus_disk_v;
+  std::mutex output_mutex;
+  std::atomic<int> sections_remaining;
   
   void initialize() {
     image_height = int(image_width / aspect_ratio);
@@ -82,6 +103,25 @@ class camera {
     auto defocus_radius = focus_dist * std::tan(degrees_to_radians(defocus_angle / 2));
     defocus_disk_u = u*defocus_radius;
     defocus_disk_v = v*defocus_radius;
+  }
+
+  void render_section(const hittable& world, std::vector<vec3>& framebuffer, int start_row, int end_row) {
+    for (int j = start_row; j < end_row; j++) {
+      for (int i = 0; i < image_width; i++) {
+        color pixel_color(0,0,0);
+
+        for (int sample = 0; sample < samples_per_pixel; sample++) {
+          ray r = get_ray(i,j);
+          pixel_color += ray_color(r, max_depth, world);
+        }
+
+        int index = j * image_width + i;
+        framebuffer[index] = pixel_color;
+      }
+    }
+
+    int remaining = --sections_remaining;
+    std::clog << "\rSections Remaining: " << remaining << ' ' << std::flush;
   }
 
   ray get_ray(int i, int j) const {
